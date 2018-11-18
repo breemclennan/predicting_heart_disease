@@ -1,0 +1,203 @@
+---
+title: "Predicting Heart Disease using R: Part 1"
+author: "Bree McLennan"
+date: "18 November 2018"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    #theme: cerulean
+    #highlight: haddock
+    #df_print: paged
+    #self_contained: yes
+    #fig_caption: true
+---
+
+```{r todo_list, include=FALSE}
+# Fixes: rsconnect required us toset R_LIBS_USER as an environment variable in windows 10 user environment variables, value set to the R package library folder configured for R studio.
+
+# Commit and push the changes to GitHub
+# 
+# After you have created the R Markdown document and finished making your changes, it is time to commit them.
+# 
+#     In RStudio click the Git tab in the upper right pane.
+#     Click Commit.
+#     In the Review changes view, check the staged box for all files.
+#     Add a commit message, for example Add initial speed and distance report.
+#     Click Commit.
+#     Click the Pull button to fetch any remote changes.
+#     Click the Push button to push your changes to the remote repository.
+#     On GitHub, navigate to the Code tab of the repository to see the changes.
+
+```
+
+
+```{r global_options, include=FALSE}
+## insert libraries here
+#devtools::install_github("rstudio/rsconnect")
+library(rsconnect)
+library(purrr) #reduce and map functions
+library(rprojroot)
+library(dplyr)
+library(DescTools)
+library(RDCOMClient)
+library(data.table)
+library(Matrix)
+library(knitr) # for dynamic reporting
+library(gridExtra) #viewing multiple plots together
+library(feather)
+library(caret)
+library(xgboost)
+library(Matrix)
+library(parallel)
+
+library(kableExtra) # create a nicely formated HTML table
+library(formattable) # for the color_tile function
+library(DT)       # For rendering tables
+
+#if (!require('RWordPress')) { #required for WordPress publishing
+#  devtools::install_github(c("duncantl/XMLRPC", "duncantl/RWordPress"))
+
+#}
+#library(RWordPress)
+
+
+########################################
+options(scipen = 10000)
+set.seed(1111)
+options(knitr.table.format = "html") 
+#opts_chunk$set(dev = 'pdf') #for plot rendering. Need to add fig.width and fig.height params to chunks
+opts_chunk$set(cache = FALSE, echo = FALSE, warning = FALSE, message = FALSE)
+
+#######################################
+
+# Global themes
+
+
+#Customize the text tables for consistency using HTML formatting
+my_kable_styling <- function(dat, caption) {
+  kable(dat, "html", escape = FALSE, caption = caption) %>%
+    kable_styling(bootstrap_options = c("striped", "condensed", "bordered"),
+                  full_width = FALSE)
+}
+
+titles.format <- theme(plot.title = element_text(face = "bold", size = 13, color = 'grey50'),
+                       plot.subtitle = element_text(color = 'grey50'),
+                       axis.title = element_text(size = 9 , color='grey50'), 
+                       axis.text = element_text(size = 9, color = 'grey50'),
+                       plot.margin = unit(c(0.3,0.3,0.3,0.3), "cm"))
+
+```
+
+```{r data_setup, include=FALSE }
+
+`%ni%` <- Negate(`%in%`)
+# Define a function that computes file paths relative to where root .git folder is located
+F <- is_git_root$make_fix_file() 
+# Example usage: F("Data/Raw") , F("Data/Processed")
+
+#Load images
+#image01_path <- F("Docs/ExploringMusicPart1.jpg")
+
+# Run custom functions code
+source("99_Functions_MassChi.R")
+source("99_Functions_multiplot_datavisualisation.R")
+```
+
+&nbsp;
+
+
+
+# Purpose and objective of this project
+
+The purpose of this project is to demonstrate the application of a practical and useful data science project workflow. This workflow will be applied to a supervised machine learning problem (binary classification).
+
+This project will be segmented into three parts:
+
+  * Part 1: Learning about the problem and the data we have. 
+  * Part 2: The initial iteration of modelling experimentation
+  * Part 3: Refined iteration of modelling: XGBoost
+
+This project will be written in R, with the [Github repository link here.](https://github.com/breemclennan/predicting_heart_disease)
+
+
+# Part 1: Learning about the problem and the data we have
+
+## Learning about the problem
+
+Initial questions to ask before starting a new project
+
+### Q1: What is the problem we are attempting to solve?
+
+Real world problem: Given a set of medical patient test results, predict the likelihood the patient has heart disease.
+Data Science problem translation: Supervised machine learning, binary classification. 
+
+
+### Q2: Who owns the problem?
+
+
+### Q3: Why does a solution matter? What value will a solution bring?
+
+
+### Q4: Human versus Machine: In this problem, what success rate does a human have in predicting outcomes?
+
+
+### Q5: What reference material exists to support our attempt?
+
+
+### Q6: Where is the data and how do we access it?
+
+[The source data is available from this link here.](https://archive.ics.uci.edu/ml/datasets/heart+Disease)
+
+### Q7: What is the target variable and how was it created?
+
+
+### Q8: What data features do we have to work with?
+
+
+## The data we have
+
+### Initial data triage
+
+1. Read in the dataset and apply variable labels
+2. Combine the test and train datasets
+3. Perform an initial assessment on the raw data
+  3.1. Dimensions, structure
+  3.2. Data Types
+  3.3. Summary
+  3.4. Identify potential transformations (recoding, renaming, simplification, centre, scale, normalise)
+  3.5. Identify potential for feature engineering options in later iterations
+
+### Preparing the data for modelling (general)
+
+1. Performing variable transformations and useful re-names
+2. Feature engineering and selection (later iterations)
+3. Converting character data types to factors
+4. Dealing with missing data (options of default values, means and modes)
+5. Calculate near zero variance and zero variance
+
+### Visualising the data and determine modelling "fit for purpose"
+
+1. Summary table with SkimR
+2. Distribution of the target class variable
+3. Statistical summaries by target class
+4. Scatterplot matrices (numerics) and featureplots (factors & categories) by target class
+5. Box and whisker plots (numerics) by target class
+6. Grouped bar plots (factors & categories) by target class
+7. Custom function: Multi-plot mosaic plot (factors & categories) by target class
+8. Custom function: Mass Chi Square (numerics)
+9. TSNE: checking feature seperability and "goodness" for use in prediction activities
+10. Feature Summary: DescTools
+11. Feature Summary: DataExplorer
+
+### Transforming the data for Supervised Machine Learning Algorithms
+
+1. One-hot encoding
+2. Capturing target class variable, record IDs, training and testing data
+3. Cross Validation setup: Dividing the training set
+4. Creating matrices
+5. Setup for specific algorithms: SVM and XGBoost
+
+
+&nbsp;
