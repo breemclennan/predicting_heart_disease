@@ -200,4 +200,42 @@ Data Science problem translation: Supervised machine learning, binary classifica
 5. Setup for specific algorithms: SVM and XGBoost
 
 
+# Part 2: The initial iteration of modelling experimentation
+
+1.	Objective of intial iteration
+2. 	creating a test framework for testing a collection of different algorithms
+3.	The evaluation metrics and relationship to the problem
+4.  Seting up the data
+5. 	Build Models
+6. 	Cross Validation and Evaluating the best model
+7.	Testing the models on unseen data - Making predictions
+8. 	Comparing experiment results for first iteration
+9.	Thoughts and conclusion
+
+
+# Part 3: Refined iteration of modelling using XGBoost
+
+## Lessons from first iteration of modelling and including hyper parameter tuning for xgboost model
+	
+1. Setup data for xgboost
+2. Refined iteration: Feature selection
+3. Training data
+4. Validation data
+5. Testing data
+6. Hyper Parameter tuning to discover optimum parameters for model
+7. Seting xgboost parameters for refined iteration
+8. Build xgboost model
+9. Explaining the xgboost model
+	- Features of importance
+	- XGB tree
+	- dalex variables of importance
+	- boruta variables of importance
+	- lime explainer object
+10. Making prediction on validation data set
+	- evaluating performance
+	- Error analysis - what was misclassified and why?
+11.	Final Submission and Prediction
+	- Making prediction on final test data set (unseen data)
+	
+	
 &nbsp;

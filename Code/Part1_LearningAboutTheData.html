@@ -1354,6 +1354,9 @@ img {
 button.code-folding-btn:focus {
   outline: none;
 }
+summary {
+  display: list-item;
+}
 </style>
 
 
@@ -1361,14 +1364,74 @@ button.code-folding-btn:focus {
 <div class="container-fluid main-container">
 
 <!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "";
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
 <script>
 $(document).ready(function () {
   window.buildTabsets("TOC");
 });
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open')
+  });
+});
 </script>
 
 <!-- code folding -->
-
 
 
 
@@ -1569,8 +1632,55 @@ div.tocify {
 <li>Creating matrices</li>
 <li>Setup for specific algorithms: SVM and XGBoost</li>
 </ol>
-<p> </p>
 </div>
+</div>
+</div>
+<div id="part-2-the-initial-iteration-of-modelling-experimentation" class="section level1">
+<h1>Part 2: The initial iteration of modelling experimentation</h1>
+<ol style="list-style-type: decimal">
+<li>Objective of intial iteration</li>
+<li>creating a test framework for testing a collection of different algorithms</li>
+<li>The evaluation metrics and relationship to the problem</li>
+<li>Seting up the data</li>
+<li>Build Models</li>
+<li>Cross Validation and Evaluating the best model</li>
+<li>Testing the models on unseen data - Making predictions</li>
+<li>Comparing experiment results for first iteration</li>
+<li>Thoughts and conclusion</li>
+</ol>
+</div>
+<div id="part-3-refined-iteration-of-modelling-using-xgboost" class="section level1">
+<h1>Part 3: Refined iteration of modelling using XGBoost</h1>
+<div id="lessons-from-first-iteration-of-modelling-and-including-hyper-parameter-tuning-for-xgboost-model" class="section level2">
+<h2>Lessons from first iteration of modelling and including hyper parameter tuning for xgboost model</h2>
+<ol style="list-style-type: decimal">
+<li>Setup data for xgboost</li>
+<li>Refined iteration: Feature selection</li>
+<li>Training data</li>
+<li>Validation data</li>
+<li>Testing data</li>
+<li>Hyper Parameter tuning to discover optimum parameters for model</li>
+<li>Seting xgboost parameters for refined iteration</li>
+<li>Build xgboost model</li>
+<li>Explaining the xgboost model
+<ul>
+<li>Features of importance</li>
+<li>XGB tree</li>
+<li>dalex variables of importance</li>
+<li>boruta variables of importance</li>
+<li>lime explainer object</li>
+</ul></li>
+<li>Making prediction on validation data set
+<ul>
+<li>evaluating performance</li>
+<li>Error analysis - what was misclassified and why?</li>
+</ul></li>
+<li>Final Submission and Prediction
+<ul>
+<li>Making prediction on final test data set (unseen data)</li>
+</ul></li>
+</ol>
+<p> </p>
 </div>
 </div>
 
