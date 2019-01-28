@@ -1,7 +1,7 @@
 ---
-title: "Predicting Heart Disease using R: Part 1"
+title: "Predicting Heart Disease using R"
 author: "Bree McLennan"
-date: "18 November 2018"
+date: "20 January 2019"
 output: 
   html_document:
     toc: true
@@ -40,6 +40,7 @@ library(rsconnect)
 library(purrr) #reduce and map functions
 library(rprojroot)
 library(dplyr)
+library(tibble)
 library(DescTools)
 library(RDCOMClient)
 library(data.table)
@@ -48,13 +49,28 @@ library(knitr) # for dynamic reporting
 library(gridExtra) #viewing multiple plots together
 library(feather)
 library(caret)
+library(mlr)
 library(xgboost)
-library(Matrix)
 library(parallel)
 
 library(kableExtra) # create a nicely formated HTML table
 library(formattable) # for the color_tile function
 library(DT)       # For rendering tables
+
+library(skimr)
+library(Rtsne)
+library(AppliedPredictiveModeling)
+library(corrplot)
+
+# Caret - external package dependencies
+library(randomForest) # to run random forest algorithm
+library(MASS) # for nnet algorithm in caret
+library(Metrics) # for logLoss metric method
+library(h2o)  # for h20 algorithms
+library(nodeHarvest) # for tree-based algorithms
+library(import) # parallel random forest
+library(mboost) # mboost algorithms
+library(pROC) # for model evaluation
 
 #if (!require('RWordPress')) { #required for WordPress publishing
 #  devtools::install_github(c("duncantl/XMLRPC", "duncantl/RWordPress"))
@@ -116,8 +132,8 @@ The purpose of this project is to demonstrate the application of a practical and
 This project will be segmented into three parts:
 
   * Part 1: Learning about the problem and the data we have. 
-  * Part 2: The initial iteration of modelling experimentation
-  * Part 3: Refined iteration of modelling: XGBoost
+  * Part 2: The initial iteration of modelling experimentation.
+  * Part 3: Refined iteration of modelling: XGBoost.
 
 This project will be written in R, with the [Github repository link here.](https://github.com/breemclennan/predicting_heart_disease)
 
@@ -128,89 +144,1055 @@ This project will be written in R, with the [Github repository link here.](https
 
 Initial questions to ask before starting a new project
 
-### Q1: What is the problem we are attempting to solve?
+**Q1: What is the problem we are attempting to solve?**
 
 Real world problem: Given a set of medical patient test results, predict the likelihood the patient has heart disease.
 Data Science problem translation: Supervised machine learning, binary classification. 
 
+References
+- drivendata
+- UCI source data
 
-### Q2: Who owns the problem?
-
-
-### Q3: Why does a solution matter? What value will a solution bring?
-
-
-### Q4: Human versus Machine: In this problem, what success rate does a human have in predicting outcomes?
+**Q2: Who owns the problem?**
 
 
-### Q5: What reference material exists to support our attempt?
+**Q3: Why does a solution matter? What value will a solution bring?**
+- time, value, cost, implementability, ease of use, maintainability
+
+**Q4: Human versus Machine: In this problem, what success rate does a human have in predicting outcomes?**
+- what performance level would the ML solution need to achieve in order to be acceptable and useful?
 
 
-### Q6: Where is the data and how do we access it?
+**Q5: What reference material exists to support our attempt?**
+
+
+**Q6: Where is the data and how do we access it?**
 
 [The source data is available from this link here.](https://archive.ics.uci.edu/ml/datasets/heart+Disease)
 
-### Q7: What is the target variable and how was it created?
+**Q7: What is the target variable and how was it created?**
+what does it represent?
 
 
-### Q8: What data features do we have to work with?
-
+**Q8: What data features do we have to work with?**
+what is in the data dictionary supplied with the dataset?
 
 ## The data we have
 
 ### Initial data triage
 
 1. Read in the dataset and apply variable labels
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}
+# Read in CSV
+# TRAINING SETS #
+raw.train_labels <- read.csv(F("/Data/train_labels.csv"), stringsAsFactors = FALSE)
+raw.train_values <- read.csv(F("/Data/train_values.csv"), stringsAsFactors = FALSE)
+
+# TESTING SETS
+raw.test_values <- read.csv(F("/Data/test_values.csv"), stringsAsFactors = FALSE)
+
+
+# Attach training values to training labels by primary key "patient_id"
+wrk.train <- list(raw.train_labels, raw.train_values) %>%
+  reduce(left_join, by = c("patient_id" = "patient_id")) %>%
+  mutate(CATDataSetOrigin = "Training")
+
+# setup the test dataset ready to append by row, to the training set.
+wrk.test <- raw.test_values %>%
+  mutate(CATDataSetOrigin =  "Testing") %>%
+  mutate(heart_disease_present = NA) # create the column for target but keep NULL.
+
+```
+
 2. Combine the test and train datasets
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}
+
+# Append all above raw datasets together: 
+# WARNING: columns are different between datasets because test doesn't have a target variable.
+# Using rbind + FILL option
+wrk.combined <- rbind(setDT(wrk.train), setDT(wrk.test), fill = TRUE)
+
+```
+
+&nbsp;
 3. Perform an initial assessment on the raw data
+
   3.1. Dimensions, structure
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}
+# Dimensions of the dataset
+# We can get a quick idea of how many instances (rows) and how many attributes (columns) the data contains with the dim function.
+dim(wrk.combined)
+
+
+``` 
+  
   3.2. Data Types
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Types of attributes
+# It is a good idea to get an idea of the types of the attributes. 
+# They could be doubles, integers, strings, factors and other types.
+# Knowing the types is important as it will give you an idea
+# of how to better summarize the data you have and the types of transforms you might need to use to prepare the data before you model it.
+# list types for each attribute
+sapply(wrk.combined, class)
+
+```
+  
   3.3. Summary
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Peek at the data itself
+head(wrk.combined)
+
+mlr::summarizeColumns(wrk.combined) %>%
+  kable(digits = 2)
+  
+```  
+&nbsp;
+
   3.4. Identify potential transformations (recoding, renaming, simplification, centre, scale, normalise)
+  
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+
+  # TODO - list of variables to rename, list for recoding, list for numerical transformation
+  # sample code for log transformations / reversibility
+```
+
+
   3.5. Identify potential for feature engineering options in later iterations
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+ # TODO - brainstorming ideas for feature engineering. pros/cons
+  
+```
 
 ### Preparing the data for modelling (general)
 
 1. Performing variable transformations and useful re-names
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# We have some character and numeric fields which can be recoded as factors
+# Potential feature selection for furture iterations:
+# thal, chest_pain_type asymptomatic, ST depression significant
+
+wrk.combined_datatypecleaned <- wrk.combined %>%
+  # The original source of the dataset defined the thal variable as a numeric variable with 3 discrete values, 3,6 and 7.
+  # Lets experiment with this original data variable definition
+  mutate(NUMthal = case_when(thal == "normal" ~ 3,
+                             thal == "reversible_defect" ~ 6,
+                             thal == "fixed_defect" ~ 7 )) %>%
+  mutate(CATsex = case_when(sex == 0 ~ "female",
+                            sex == 1 ~ "male")) %>%   
+  # chest pain type character categorty values derived from original source dataset
+  mutate(CATchest_pain_type = case_when(chest_pain_type == 1 ~ "typical_angina",
+                                        chest_pain_type == 2 ~ "atypical_angina",
+                                        chest_pain_type == 3 ~ "non-anginal_pain",
+                                        chest_pain_type == 4 ~ "asymptomatic")) %>%
+  # slope of peak exercise st segment character categorty values derived from original source dataset
+  mutate(CATslope_of_peak_exercise_st_segment = case_when(slope_of_peak_exercise_st_segment == 1 ~ "upsloping",
+                                                          slope_of_peak_exercise_st_segment == 2 ~ "flat",
+                                                          slope_of_peak_exercise_st_segment == 3 ~ "downsloping")) %>%
+  mutate(CATfasting_blood_sugar_gt_120_mg_per_dl = case_when(fasting_blood_sugar_gt_120_mg_per_dl == 0 ~ "no",
+                                                             fasting_blood_sugar_gt_120_mg_per_dl == 1 ~ "yes")) %>% 
+  ## IMPORTANT NOTE ON EKG - VALUE 1 LINKED WITH ST elevation or depression greater than 0.05 mV. Value 2 uses Estes' criteria measurement.
+  # resting ekg results character categorty values derived from original source dataset
+  mutate(CATresting_ekg_results = case_when(resting_ekg_results == 0 ~ "normal",
+                                            resting_ekg_results == 1 ~ "ST-T_wave_abnormality",
+                                            resting_ekg_results == 2 ~ "likely_left_ventricular_hypertrophy" )) %>%
+  mutate(CATexercise_induced_angina = case_when(exercise_induced_angina == 0 ~ "no",
+                                                exercise_induced_angina == 1 ~ "yes")) %>%
+  # ENGINEERED FEATURES FOR EXPERIMENTATION:
+  # 1. Numeric - Max Heart Rate for Age group. The theoretical maximum heart rate the patient ought to be able to achieve for their age
+  mutate(NUMMaxHeartRateForAge = round(206.9 - (0.67 * age)),digits = 0) %>%
+  # 2. Factor - CATMaxHeartRateAchieved - the theoretical maximum heart rate for the patient relative to their max hr test score
+  mutate(CATMaxHeartRateAchieved = ifelse(max_heart_rate_achieved < (206.9 - (0.67 * age)),"Below_MHR_ForAge",
+                                          "AtorAbove_MHR_ForAge" )) %>%
+  # 3. Factor - CATOldpeakSTDepression - group the test results into minor or significant deviations
+  mutate(CATOldpeakSTDepression = ifelse(oldpeak_eq_st_depression <= 2.0, "minor_ST_depression",
+                                         "significant_ST_depression" )) %>%
+  # FINAL SELECTION - what features will we remove, with respect to model output features of importance?
+  dplyr::select(-NUMthal,
+         -sex,
+         -chest_pain_type,
+         -slope_of_peak_exercise_st_segment,
+         -fasting_blood_sugar_gt_120_mg_per_dl,
+         -resting_ekg_results,
+         -exercise_induced_angina) %>%
+  
+  # Apply some more meaninful names to the variables. Prefix data types.
+  dplyr::rename(TARGET_heart_disease_present   = heart_disease_present,
+                CATthal                        = thal, 
+                NUMresting_blood_pressure      = resting_blood_pressure,
+                NUMnum_major_vessels           = num_major_vessels,
+                NUMserum_cholesterol_mg_per_dl = serum_cholesterol_mg_per_dl,
+                NUMoldpeak_eq_st_depression    = oldpeak_eq_st_depression,
+                NUMage                         = age,
+                NUMmax_heart_rate_achieved     = max_heart_rate_achieved) %>%
+  #Convert the integer/logical target variable to factor
+  mutate_at(.vars = vars(starts_with("CAT"), "TARGET_heart_disease_present"), #more categorical fields can be added here to convert in bulk,
+            .funs = funs(as.factor(.)))
+  
+```
+
+
 2. Feature engineering and selection (later iterations)
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+#### FEATURE SELECTION ##########
+glimpse(wrk.combined_datatypecleaned)
+wrk.combined_datatypecleaned <- dplyr::select(wrk.combined_datatypecleaned, patient_id, TARGET_heart_disease_present, CATDataSetOrigin,
+                                       CATthal,CATchest_pain_type,  NUMoldpeak_eq_st_depression, NUMnum_major_vessels, 
+                                       NUMMaxHeartRateForAge, NUMmax_heart_rate_achieved,
+                                       CATsex, CATexercise_induced_angina, CATslope_of_peak_exercise_st_segment,
+                                       NUMage)
+features_selected = c("CATthal","CATchest_pain_type",  "NUMoldpeak_eq_st_depression", "NUMnum_major_vessels","NUMMaxHeartRateForAge", "NUMmax_heart_rate_achieved", "CATsex", "CATexercise_induced_angina", "CATslope_of_peak_exercise_st_segment","NUMage")
+  
+```
+
+
 3. Converting character data types to factors
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+
+# Make sure categoricals are factors
+wrk.combined_datatypecleaned <- wrk.combined_datatypecleaned %>%
+  mutate_at( #Convert the integer/logical target variable to factor
+    .vars = vars(starts_with("CAT"),"TARGET_heart_disease_present"), #more categorical fields can be added here to convert in bulk,
+    .funs = funs(as.factor(.))
+  )
+```
+
+
 4. Dealing with missing data (options of default values, means and modes)
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+ # TODO
+  
+```
+
+
 5. Calculate near zero variance and zero variance
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Find Zero Variance and Near Zero Variance columns and remove from combined set
+nzv <- caret::nearZeroVar(wrk.combined_datatypecleaned, saveMetrics = TRUE)
+cols_zeroVar <- rownames(nzv[which(nzv$zeroVar == TRUE), ])
+cols_nearzeroVar <- rownames(nzv[which(nzv$nzv == TRUE), ])
+`%ni%` <- Negate(`%in%`)
+wrk.combined_datatypecleaned <- subset(wrk.combined_datatypecleaned, select = names(wrk.combined_datatypecleaned) %ni% cols_zeroVar)
+
+  
+```
+
 
 ### Visualising the data and determine modelling "fit for purpose"
 
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Setup for visualisations
+#We now have a basic idea about the data. We need to extend that with some visualizations.
+#We are going to look at two types of plots:
+
+# 1. Univariate plots to better understand each attribute.
+# 2. Multivariate plots to better understand the relationships between attributes.
+x <- dplyr::select(wrk.combined_datatypecleaned, -patient_id, -TARGET_heart_disease_present, -CATDataSetOrigin )
+x_num <- dplyr::select(wrk.combined_datatypecleaned,(starts_with("NUM")))
+x_cat <- dplyr::select(wrk.combined_datatypecleaned,(starts_with("CAT")),"TARGET_heart_disease_present",  -patient_id, -CATDataSetOrigin)
+y <- dplyr::select(wrk.combined_datatypecleaned, TARGET_heart_disease_present)
+```
+
 1. Summary table with SkimR
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+
+skimr::skim(wrk.combined_datatypecleaned)
+# sparkline graphs for numerics!
+```
+
+
 2. Distribution of the target class variable
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Target class distribution
+# take a look at the number of instances (rows) that belong to each class. We can view this as an absolute count and as a percentage.
+# summarize the class distribution
+percentage <- prop.table(table(wrk.combined_datatypecleaned$TARGET_heart_disease_present)) * 100
+cbind(freq = table(wrk.combined_datatypecleaned$TARGET_heart_disease_present), percentage = percentage)
+
+# We can also create a barplot of
+# the target class variable to get a graphical representation of the class distribution
+# (generally uninteresting in this case because they are close to being balanced).
+# barplot for class breakdown
+plot(y, main = "Target class distribution")  
+```
+
+
 3. Statistical summaries by target class
-4. Scatterplot matrices (numerics) and featureplots (factors & categories) by target class
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Statistical summaries
+# Now finally, we can take a look at a summary of each attribute in relation to the target variable
+mydata <- dplyr::group_by(wrk.combined_datatypecleaned, TARGET_heart_disease_present) %>%
+  skimr::skim()
+mydata
+  
+```
+
+
+4. Scatterplot matrices (numerics), featureplots (factors & categories) and density plots by target class
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Multivariate plots
+#Now we can look at the interactions between the variables.
+#First let’s look at scatterplots of all pairs of attributes and color the points by class.
+#In addition, because the scatterplots show that points for each class are generally separate,
+#we can draw ellipses around them.
+
+# scatterplot matrix with ellipses
+AppliedPredictiveModeling::transparentTheme(trans = .4)
+caret::featurePlot(x = x_num, 
+                   y = y$TARGET_heart_disease_present, 
+                   plot = "ellipse", #alt "pairs"
+                   ## Add a key at the top (two levels)
+                   auto.key = list(columns = 2))
+
+
+# Overlayed density plots
+AppliedPredictiveModeling::transparentTheme(trans = .9)
+featurePlot(x = x_num,
+            y = y$TARGET_heart_disease_present,
+            plot = "density", 
+            ## Pass in options to xyplot() to 
+            ## make it prettier
+            scales = list(x = list(relation="free"), 
+                          y = list(relation="free")), 
+            adjust = 1.5, 
+            pch = "|", 
+            layout = c(3, 2), 
+            auto.key = list(columns = 2))
+
+# Correlation plot (small number of original numeric vars):
+cor(x_num) # print correlation matrix results first, then visually plot.
+corrplot::corrplot.mixed(cor(x_num), lower="circle", upper="color", 
+               tl.pos="lt", diag="n", order = "hclust", hclust.method="complete")
+
+
+```
+
+
 5. Box and whisker plots (numerics) by target class
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+
+
+# box and whisker plots for each attribute (numeric)
+featurePlot(x = x_num, 
+            y = y$TARGET_heart_disease_present, 
+            plot = "box", 
+            ## Pass in options to bwplot() 
+            scales = list(y = list(relation="free"),
+                          x = list(rot = 90)),  
+            layout = c(3,2 ), 
+            auto.key = list(columns = 2))
+  
+```
+
+
 6. Grouped bar plots (factors & categories) by target class
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Categorical/Factor- grouped bar plots - checking frequency counts
+ggplot(x_cat, aes(x=CATthal, fill=TARGET_heart_disease_present)) + 
+  geom_bar(position="dodge", stat="count")
+ggplot(x_cat, aes(x=CATsex, fill=TARGET_heart_disease_present)) + 
+  geom_bar(position="dodge", stat="count")
+ggplot(x_cat, aes(x=CATslope_of_peak_exercise_st_segment, fill=TARGET_heart_disease_present)) + 
+  geom_bar(position="dodge", stat="count")
+ggplot(x_cat, aes(x=CATchest_pain_type, fill=TARGET_heart_disease_present)) + 
+  geom_bar(position="dodge", stat="count")
+ggplot(x_cat, aes(x=CATexercise_induced_angina, fill=TARGET_heart_disease_present)) + 
+  geom_bar(position="dodge", stat="count")
+
+  
+```
+
+
 7. Custom function: Multi-plot mosaic plot (factors & categories) by target class
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Create a MOSIAC PLOT OF CHAR/FACTOR VS TARGET
+#See code 99_Functions
+#plot.new()
+#dev.off()
+x_cat_p1 <- dplyr::select(x_cat, TARGET_heart_disease_present, CATthal, CATsex)
+x_cat_p2 <- dplyr::select(x_cat, TARGET_heart_disease_present, CATslope_of_peak_exercise_st_segment)
+x_cat_p3 <- dplyr::select(x_cat, TARGET_heart_disease_present, CATchest_pain_type)
+x_cat_p4 <- dplyr::select(x_cat, TARGET_heart_disease_present, CATexercise_induced_angina)
+multiplot(x_cat_p1, 'TARGET_heart_disease_present')
+multiplot(x_cat_p2, 'TARGET_heart_disease_present')
+multiplot(x_cat_p3, 'TARGET_heart_disease_present')
+multiplot(x_cat_p4, 'TARGET_heart_disease_present')
+  
+```
+
+
 8. Custom function: Mass Chi Square (numerics)
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Try mass Chi Square test (see 99_Functions_MassChi.R)
+funMassChi(x_num)
+Ergebnis
+```
+
+
 9. TSNE: checking feature seperability and "goodness" for use in prediction activities
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# 3.2 TSNE: Are the features seperable/separatable/distinct enough or too noisy to find a clear signal for use in prediction?
+# REF:https://www.analyticsvidhya.com/blog/2017/01/t-sne-implementation-r-python/
+# This step is purely observational. If we find distinct groups emerging, then we know
+# with a degree of confidence that our set of features will be sufficient to predict with.
+# If the visual looks noisy, perhaps we can invest in dropping some less contributory features, then attempt prediction.
+# T-SNE (using instead of PCA)
+
+## Curating the database for analysis with both t-SNE and PCA
+#Labels<-train$label
+#train$label<-as.factor(train$label)
+## for plotting
+colors = rainbow(length(unique(y$TARGET_heart_disease_present)))
+names(colors) = unique(y$TARGET_heart_disease_present)
+
+## Executing the algorithm on curated data
+tsne <- Rtsne::Rtsne(x, dims = 2, perplexity=9, verbose=TRUE, max_iter = 500)
+exeTimeTsne <- system.time(Rtsne(x, dims = 2, perplexity=9, verbose=TRUE, max_iter = 500))
+# TODO: We can step through running TSNE adding one variable at a time to check seperability
+
+## Plotting
+plot(tsne$Y, t='n', main="tsne")
+text(tsne$Y, labels=y$TARGET_heart_disease_present, col=colors[y$TARGET_heart_disease_present])
+
+  
+```
+
+
 10. Feature Summary: DescTools
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# DescTools 
+#wrd_01 <- GetNewWrd()
+# all the features/attributes versus response (. ~ target) - A different perspective.
+wrk.forDescTools <- wrk.combined_datatypecleaned %>%
+  dplyr::select(-patient_id, -CATDataSetOrigin)
+#Desc(wrd = wrd_01, data = wrk.forDescTools, . ~ TARGET_heart_disease_present , plotit = TRUE, verbose = 3)
+
+#SRC File: D:\TAC Data Science\04 Projects\Kaggle Competitions\Driven Data Org - Predicting Heart Disease\R\Docs\DescTools - Describe wrk-combined_datatypecleaned - All vs Target.docx
+#Convert to PDF.
+#wrd_01$ActiveDocument()$SaveAs2(FileName=F("/Data/R_DescTools_HeartDisease_vs_Features.docx"))
+
+  
+```
+
+
 11. Feature Summary: DataExplorer
+**Add link to "DataExplorer_Report_FullDset.html" **
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=FALSE}  
+# DataExplorer
+create_report(wrk.combined_datatypecleaned, output_file = "DataExplorer_Report_FullDset.html", output_dir = F("/Docs"),
+              y = "TARGET_heart_disease_present", config = config)
+             # ,html_document(toc = TRUE, toc_depth = 6, theme = "flatly"))
+  
+```
+
+12. Testing newly created features for associations with target variable
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Check association between Age and Max Heart rate. if we see association here, not
+# a great idea to go creating features based off this.
+ggplot(wrk.combined_datatypecleaned, aes(x=NUMmax_heart_rate_achieved, NUMage)) + 
+  geom_point(aes(colour = factor(CATsex)), size = 3) +
+  geom_smooth(method = 'lm') +
+  ggtitle("Checking association between age and max heart rate")
+
+#Chi square test between Age and Max HR -- looking for P value less than 0.05 and a large X-squred chi sq value.
+#H0: Null hypothesis: The The two variables are independent. P > 0.05
+#H1: Rejecting null hypothesis: The two variables are related. P < 0.05
+chisq.test(wrk.combined_datatypecleaned$NUMage, wrk.combined_datatypecleaned$NUMmax_heart_rate_achieved)
+# X-squared = 3845, df = 3560, p-value = 0.0004851:: Age v max HR are related.
+
+chisq.test(wrk.combined_datatypecleaned$NUMage, wrk.combined_datatypecleaned$NUMnum_major_vessels) # vert weak, but related
+chisq.test(wrk.combined_datatypecleaned$NUMage, wrk.combined_datatypecleaned$NUMoldpeak_eq_st_depression)
+
+# Try mass Chi Square test (see 99_Functions_MassChi.R)
+funMassChi(x_num)
+Ergebnis
+# delFirst parameter can delete the first n columns. So if you have an count index or something you dont want to test.
+# Can also specify a path for XL output
+# What else is age associated with the age variable??? Check the correlation plot.
+  
+```
+
+
+
 
 ### Transforming the data for Supervised Machine Learning Algorithms
 
 1. One-hot encoding
-2. Capturing target class variable, record IDs, training and testing data
-3. Cross Validation setup: Dividing the training set
-4. Creating matrices
-5. Setup for specific algorithms: SVM and XGBoost
 
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# One-hot enccode (create dummy) variables - all except the target class and dataset origin flag.
+wrk.combined_datatypecleaned <- mlr::createDummyFeatures(
+  wrk.combined_datatypecleaned, target = "TARGET_heart_disease_present",
+  cols = c("CATthal","CATchest_pain_type", "CATsex", "CATexercise_induced_angina", "CATslope_of_peak_exercise_st_segment")
+  #add in other factor variables here for bulk one-hot encoding.
+)
+
+# Checking results
+summarizeColumns(wrk.combined_datatypecleaned) %>%
+  kable(digits = 2)
+
+#check correlations post one hot encoding
+corrplot_num <- select_if(wrk.combined_datatypecleaned, is.numeric) #only numerics, target not included.
+corrplot.mixed(cor(corrplot_num), lower="circle", upper="color", 
+               tl.pos="lt", diag="n", order="hclust", hclust.method="complete")
+
+#Check TSNE again
+tsne <- Rtsne(corrplot_num, dims = 2, perplexity=18, verbose=TRUE, max_iter = 500)
+exeTimeTsne <- system.time(Rtsne(corrplot_num, dims = 2, perplexity=18, verbose=TRUE, max_iter = 500))
+## Plotting 
+plot(tsne$Y, t='n', main="tsne")
+text(tsne$Y, labels=y$TARGET_heart_disease_present, col=colors[y$TARGET_heart_disease_present])
+
+
+# check for nzv again: resting_ekg_results.1  is NEAR ZERO VARIANCE
+nzv_ohe <- nearZeroVar(wrk.combined_datatypecleaned, saveMetrics = TRUE)
+cols_ohe <- rownames(nzv_ohe[which(nzv_ohe$zeroVar == TRUE), ])
+`%ni%` <- Negate(`%in%`)
+wrk.combined_datatypecleaned <- subset(wrk.combined_datatypecleaned, select = names(wrk.combined_datatypecleaned) %ni% cols_ohe)
+
+# Check the dataset for our newly created OHE vars
+str(wrk.combined_datatypecleaned)
+
+```
+&nbsp;
+
+2. Setting up final test dataset (scoring)
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# TEST SETUP SET FOR FINAL PREDICTIONS AND SUBMISSION (Capture test data and test IDs)
+mod.test <- wrk.combined_datatypecleaned %>% 
+  filter(CATDataSetOrigin == "Testing") %>%
+  dplyr::select(-CATDataSetOrigin) # and keep patient id for later
+
+mod.test_DATA <- dplyr::select(mod.test, -patient_id, -TARGET_heart_disease_present )
+mod.test_ID   <- mod.test$patient_id
+
+str(mod.test_DATA)
+str(mod.test_ID)
+
+```
+
+
+3. Training Set: Store the record id (primary key) as row name 
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+# Convert ID column to rownames [Patient ID [col 1] plus heart disease present [col 2]]
+# This will overwrite above datasets
+row.names(wrk.combined_datatypecleaned) <-
+  paste(wrk.combined_datatypecleaned[, 1], wrk.combined_datatypecleaned[, 2], sep = "_")
+wrk.combined_datatypecleaned[, 1] <- NULL #Nullify column 1 Patient ID field
+
+# MODEL: TRAINING DATASET SETUP =======================================================================
+mod.training_00 <- wrk.combined_datatypecleaned %>%
+  rownames_to_column("patient_id_target") %>% #preserve rownames
+  filter(CATDataSetOrigin == "Training") %>%
+  dplyr::select(-CATDataSetOrigin) %>%
+  column_to_rownames("patient_id_target") #preserve rownames
+
+str(mod.training_00)
+
+```
+
+
+4. Cross Validation dataset setup: Dividing the training set
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE} 
+#set.seed(seed)
+inTrainRows <- createDataPartition(mod.training_00$TARGET_heart_disease_present,p=0.7,list=FALSE, times = 1) #split into 80/20
+## WARNING:  Some classes have no records ( unkn ) and these will be ignored
+trainData    <- mod.training_00[inTrainRows,]
+validateData <-  mod.training_00[-inTrainRows,]
+
+nrow(trainData)/(nrow(validateData)+nrow(trainData)) #checking whether really 80% -> OK (54 and 126 records respectively)
+
+```
+
+5. Setting up the target variable
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE} 
+# Target vector and train/validation sets prepared
+train.target <- as.numeric(as.character(trainData$TARGET_heart_disease_present)) # Y (train)
+validate.target <- as.numeric(as.character(validateData$TARGET_heart_disease_present))   # Y (test/validate)
+train.data <- dplyr::select(trainData, -TARGET_heart_disease_present) # remove targets from X (train)
+validate.data  <- dplyr::select(validateData, -TARGET_heart_disease_present) # remove targets from X (test/validate)
+validate.record_ID <- rownames(validateData)
+
+```
+
+5. Creating matrices
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE} 
+train.mx = sparse.model.matrix(~ . -1, data = train.data) # 80% train
+validate.mx = sparse.model.matrix(~ . -1, data = validate.data)   # 20% test/validate
+
+# For final testing & submission
+finaltest.mx = sparse.model.matrix(~ . -1, data = mod.test_DATA) # for submission
+
+# test/validate DMatrices
+dtrain <- xgb.DMatrix(data = train.mx, label = train.target)
+dtest <- xgb.DMatrix(data = validate.mx, label = validate.target)
+dfinaltest <- xgb.DMatrix(data = finaltest.mx)
+
+
+#Checking
+dim(dtrain) #126
+str(train.target) #126
+dim(dtest)  #54
+str(validate.target) #54
+dim(dfinaltest) #90
+```
+
+
+6. Setup for specific algorithms: Stochastic Gradient Boosting & SVM
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE} 
+
+# This method finds tuning parameters automatically. But a bit more work to prepare data.
+# for this to work add names to all levels (numbers not allowed)
+feature.names=names(mod.training_00)
+
+for (f in feature.names) {
+  if (class(mod.training_00[[f]])=="factor") {
+    levels <- unique(c(mod.training_00[[f]]))
+    mod.training_00[[f]] <- factor(mod.training_00[[f]],
+                              labels=make.names(levels))
+  }
+}
+set.seed(1111)
+inTrainRows2 <- createDataPartition(mod.training_00$TARGET_heart_disease_present,p=0.7,list=FALSE)
+trainData2 <- mod.training_00[inTrainRows2,]
+testData2 <-  mod.training_00[-inTrainRows2,]
+
+```
 
 # Part 2: The initial iteration of modelling experimentation
 
 1.	Objective of intial iteration
+
+- apply some basic binary classification supervised machine learning algorithms
+- evaluate the performance of the collection of applied algorithms
+- check the variables of importance
+- review results and consider any data features to add/adjust/remove
+- review model performance and consider any tuning parameter adjustments or alternate algorithms to use
+
+
 2. 	creating a test framework for testing a collection of different algorithms
+
+Now it is time to create some models of the data and estimate their accuracy on unseen data.
+Here is what we are going to cover in this step:
+
+-Set-up the test harness to use 10-fold cross validation.
+-Build 5 different models to predict species from flower measurements
+-Select the best model.
+
+ We will perform 10-fold crossvalidation to estimate accuracy.
+ this will split our dataset into 10 parts, train in 9 and test on 1 and release for all combinations of train-test splits.
+ We will also repeat the process 3 times for each algorithm with different splits of the data into 10 groups, 
+ in an effort to get a more accurate estimate.
+ 
+ We are using the metric of “Accuracy” to evaluate models. We can change this to another evaluation metric if we like, such as LogLoss.
+ This is a ratio of the number of correctly predicted instances in divided by the total number of instances in the dataset
+ multiplied by 100 to give a percentage (e.g. 95% accurate).
+ We will be using the metric variable when we run build and evaluate each model next.
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
+set.seed(1111)
+#Caret train control setup: Run algorithms using 10-fold cross validation
+control <- trainControl(method="cv", number=10, classProbs=TRUE, summaryFunction=mnLogLoss)
+
+# For stochastic gradient boosting and support vector machie (SVM)
+SpecialControl <- trainControl(method = "repeatedcv",
+                           number = 10,
+                           repeats = 10,
+                           ## Estimate class probabilities
+                           classProbs = TRUE,
+                           ## Evaluate performance using
+                           ## the following function
+                           summaryFunction = mnLogLoss)
+                          #twoClassSummary)
+
+gbmGrid <-  expand.grid(interaction.depth =  c(1, 5, 9),
+                        n.trees = (1:30)*50,
+                        shrinkage = 0.1,
+                        n.minobsinnode = 10)
+
+#, classProbs=TRUE, savePredictions=TRUE, summaryFunction = LogLoss)
+#metric <- "Accuracy"
+metric <- "logLoss"
+#metric <- "LogLoss"
+
+# EXPLORE DIFFERENT METHODS WITH DIFFERENT TUNING PARAMETERS AND COMPARE MODEL PERFORMANCE =====
+AUC = list()
+Accuracy = list()
+LogLoss = list()
+
+```
+
+
 3.	The evaluation metrics and relationship to the problem
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
+
+```
+
 4.  Seting up the data
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
+
+```
+
 5. 	Build Models
+
+
+We don’t know which algorithms would be good on this problem or what configurations to use. 
+We get an idea from the plots that some of the classes are partially linearly separable in some dimensions,
+so we are expecting generally good results.
+
+Let’s evaluate 5 basic algorithms using `Caret`:
+
+- 1. Linear Discriminant Analysis (LDA)
+- 2. Classification and Regression Trees (CART).
+- 3. k-Nearest Neighbors (kNN).
+- 4. Support Vector Machines (SVM) with a linear kernel (using SpecialControl train control object)
+- 5. Random Forest (RF)
+
+Then move onto evaluating some algorithms which generally perform well:
+
+- 1. GLM generalised linear model 
+- 2. Random Forest, using default tuning
+- 3. Boosted tree model with tuning (grid search using learning rate and number of trees)
+- 4. Stochastic gradient boosting (complex)
+
+Then finish with experimenting a collection of randomly chosen algorithms:
+
+- 1. Neural Net (Advanced ML, deep learning)
+- 2. Averaged Neural Network
+- 3. Nodeharvest - Tree-Based ensembles
+- 4. Parallel random forest
+- 5. GLM boost
+- 6. GLM net
+
+
+This is a good mixture of simple linear (LDA), nonlinear (CART, kNN) and complex nonlinear methods (SVM, RF).
+We reset the random number seed before reach run to ensure that the evaluation of each algorithm is performed using exactly the same data splits. 
+It ensures the results are directly comparable.
+
+Caret does support the configuration and tuning of the configuration of each model, we will explore this later.
+
+```{r eval=, echo=TRUE, message=FALSE, warning=FALSE}
+set.seed(1111)
+# Let’s build our five basic models:
+# 1) linear algorithms
+# LDA
+#set.seed(7)
+fit.lda <- caret::train(TARGET_heart_disease_present~., data=trainData2, method="lda", metric=metric, trControl=control)
+
+# 2) nonlinear algorithms
+# CART
+#set.seed(7)
+fit.cart <- caret::train(TARGET_heart_disease_present~., data=trainData2, method="rpart", metric=metric, trControl=control)
+
+# 3) kNN
+#set.seed(7)
+fit.knn <- caret::train(TARGET_heart_disease_present~., data=trainData2, method="knn", metric=metric, trControl=control)
+
+# 4) advanced algorithms
+# SVM 
+#set.seed(7)
+# NOTE: Using "trainData2" with factors configured with names, and train control is using SpecialControl object
+fit.svm <- caret::train(make.names(TARGET_heart_disease_present)~., data=trainData2, method="svmRadial", metric=metric, trControl = SpecialControl)
+#SVM requires that the target class variable use character names when training the model. i.e, 1= "YES", 0="No". We can use make.names() to fix this.
+
+# 5) advanced algorithms
+#Random Forest
+#set.seed(7)
+fit.rf <- caret::train(TARGET_heart_disease_present~., data=trainData2, method="rf",preProcess = c("scale", "center"), metric=metric, trControl=control)
+
+#==================================== General Performing Algorithms =================================================
+#GLM
+fit.glm <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "glm", metric=metric, trControl=control)
+
+# Random forest with default tuning
+fit.rf_default <- randomForest(TARGET_heart_disease_present ~ .,
+                        data = trainData2,
+                        importance = TRUE,
+                        ntree = 2000)
+
+# Boosted tree with tuning
+objControl <- trainControl(method = 'cv', number = 10)
+fit.boostedtree <- caret::train(TARGET_heart_disease_present ~ .,data=trainData2, method = 'gbm',
+                    trControl=objControl, tuneGrid = gbmGrid, verbose=FALSE)
+
+# Stochastic gradient boosting machine
+fit.gbm <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "gbm", verbose = FALSE,
+                  tuneGrid = gbmGrid, metric=metric, trControl=SpecialControl)
+
+
+#===================================================================================================================
+
+# Advanced ML Algorithms (deep learning) ============================================================================
+
+# Neural network
+fit.nnet <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "nnet", metric=metric, trControl=control)
+
+# Best general performing algorithms: 
+# https://datascience.stackexchange.com/questions/10745/which-of-the-180-algorithms-in-rs-caret-package-are-feasible
+# more detail on xgboost: http://mlr-org.github.io/How-to-win-a-drone-in-20-lines-of-R-code/
+
+# Model Averaged Neural Network
+fit.avnnet <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "avNNet", metric=metric, trControl=control)
+
+#Tree-Based ensembles
+fit.nodeHarvest <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "nodeHarvest", metric=metric, trControl=control)
+
+# Parallel random forest
+fit.parRF <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "parRF", metric=metric, trControl=control)
+
+# mboost
+fit.glmboost <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "glmboost", metric=metric, trControl=control)
+fit.glmnet   <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "glmnet", metric=metric, trControl=control)
+
+
+```
+
 6. 	Cross Validation and Evaluating the best model
+
+We now have 5 models and accuracy estimations for each. 
+We need to compare the models to each other and select the most accurate.
+We can report on the accuracy of each model by first creating a list of the created models and using the summary function.
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
+
+# svm=fit.svm not included here, "there are different numbers of resamples" in this model versus the rest
+
+results <- caret::resamples(list(lda=fit.lda, cart=fit.cart, knn=fit.knn, fit.svm, rf=fit.rf, 
+                                 glm=fit.glm, rfdef=fit.rf_default, boostedtree=fit.boostedtree, gbm=fit.gbm,
+                                 nnet=fit.nnet, avnnet=fit.avnnet, nodeharvest=fit.nodeHarvest, parRF=fit.parRF,
+                                 glmboost=fit.glmboost, glmnet=fit.glmnet ))
+                      #xgboost=fit.caret.xgboost, gbmh2o=fit.gbm.h2O , glmnet_h2o=fit.glmnet_h2o
+summary(results)
+# We can see the accuracy of each classifier and also other metrics like Kappa:
+
+#We can also create a plot of the model evaluation results and compare the spread and the mean accuracy of each model. 
+#There is a population of accuracy measures for each algorithm because each algorithm was evaluated 10 times (10 fold cross validation).
+
+# compare accuracy of models
+dotplot(results)
+# We can see that the most accurate model in this case was LDA
+
+# The results for just the LDA model can be summarized.
+# summarize Best Model
+print(fit.gbm)
+
+
+# Variables of importance
+
+#RF model
+fit.rf$finalModel$confusion
+imp <- fit.rf$finalModel$importance
+imp[order(imp, decreasing = TRUE), ]
+# estimate variable importance
+importance <- varImp(fit.rf, scale = TRUE)
+plot(importance)
+
+# LOGLOSS:
+#$`logReg`
+#[1] 0.4693868  // 0.36453 comp result
+#$RF
+#[1] 0.7053043  // 0.4028 comp result
+#$CaretRF
+#[1] 0.7366456  // 0.40 comp result
+#$boost
+#[1] 1.156777
+#$gbm
+#[1] 0.6511815
+#$svm
+#[1] 0.4587091 << best model! // 0.39 comp result
+
+
+# ===============================================================================================================#
+# SELECTED BEST PERFORMING MODEL: VARIABLES OF IMPORTANCE =======================================================#
+# ===============================================================================================================#
+summary(logRegModel)$coeff # Second best performing mode, GLM, variables of importance. TODO: recode sex as factor.
+
+RFModel$confusion
+imp <- RFModel$importance
+imp[order(imp, decreasing = TRUE), ]
+
+# TODO: plot variables of importance --- try lime, boruta (plot is currently showing Error vs Trees)
+RFImp = varImp(RFModel, scale = FALSE)
+row = rownames(varImp(RFModel, scale = FALSE)$importance)
+row = convert.names(row)
+rownames(RFModel$importance)=row
+plot(RFModel,main = 'Variable importance for heart failure prediction with boosted tree') 
+
+# Ideas REF: https://rpubs.com/cgalea/396365
+library(spFSR)
+spFSR::plotImportance(RFModel)
+
+# Ideas REF: https://shiring.github.io/machine_learning/2017/03/31/webinar_code
+library(rpart)
+library(rpart.plot)
+rpart.plot(RFModel, extra = 100)
+
+
+# ===============================================================================================================#
+# Confusion Matrix Output                                 =======================================================#
+# ===============================================================================================================#
+
+#logRegConfMat
+#RFConfMat
+#boostConfMat
+#gbmConfMat
+#svmConfMat
+
+# ===============================================================================================================#
+# Example of Model output for selection of tuning parameters ====================================================#
+# ===============================================================================================================#
+
+#boostModel
+
+
+```
+
 7.	Testing the models on unseen data - Making predictions
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
+
+#The nnet was the most accurate model (mean accuracy 0.8564103). Now we want to get an idea of the accuracy of the model on our validation set.
+
+#This will give us an independent final check on the accuracy of the best model.
+#It is valuable to keep a validation set just in case you made a slip during such as overfitting to the training set or a data leak. Both will result in an overly optimistic result.
+
+#We can run the LDA model directly on the validation set and summarize the results in a confusion matrix.
+
+# NEURAL NET NNET
+Prediction_NNET <- predict(fit.nnet, validateData) # For confusion matrix
+PredictionProb.nnet <- predict(fit.nnet, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
+confusionmat.nnet <- confusionMatrix(Prediction_NNET, validateData[,"TARGET_heart_disease_present"])
+
+library(pROC)
+AUC$NNET <- roc(as.numeric(validateData$TARGET_heart_disease_present),as.numeric(as.matrix((PredictionProb.nnet))))$auc
+Accuracy$NNET <- confusionmat.nnet$overall['Accuracy']  
+library(Metrics)
+LogLoss$NNET <- ModelMetrics::logLoss(as.numeric(validateData$TARGET_heart_disease_present), as.numeric(as.matrix(PredictionProb.nnet)))
+
+AUC$NNET
+Accuracy$NNET
+LogLoss$NNET
+# AUC 0.8472, ACC 0.722, LogLoss 1.2
+
+
+#========== GBM ===================================== #
+# estimate skill of GBM on the validation dataset
+Prediction_GBM <- predict(fit.gbm, validateData) # For confusion matrix
+PredictionProb.gbm <- predict(fit.gbm, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
+confusionmat.gbm <- confusionMatrix(Prediction_GBM, validateData[,"TARGET_heart_disease_present"])
+
+library(pROC)
+AUC$GBM <- roc(as.numeric(validateData$TARGET_heart_disease_present),as.numeric(as.matrix((PredictionProb.gbm))))$auc
+Accuracy$GBM <- confusionmat.gbm$overall['Accuracy']  
+library(Metrics)
+LogLoss$GBM <- logLoss(as.numeric(validateData$TARGET_heart_disease_present), as.numeric(as.matrix(PredictionProb.gbm)))
+# AUC 0.8424, ACC 0.7777778 , LogLoss 1.175429
+
+AUC$GBM
+Accuracy$GBM
+LogLoss$GBM
+
+
+# FOR SUBMISSION ===
+# Predict using the test set
+SUBMISSION_Prediction_GBM <- predict(fit.gbm, mod.test_DATA, type = 'prob')
+
+# Save the solution to a dataframe with two columns: patient_id and heart_disease_present (prediction)
+SOLUTION_GBM <- data.frame(patient_id = mod.test_ID, TARGET_heart_disease_present = SUBMISSION_Prediction_GBM$`1`)
+
+# Write the solution to file
+write.csv(SOLUTION_GBM, file = F("Data/submission_v6_R_GBM_20190127BM.csv"), row.names = FALSE)
+
+#========== LDA ===================================== #
+# estimate skill of LDA on the validation dataset
+Prediction_LDA <- predict(fit.lda, validateData) # For confusion matrix
+PredictionProb.lda <- predict(fit.lda, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
+confusionmat.lda <- confusionMatrix(Prediction_LDA, validateData[,"TARGET_heart_disease_present"])
+
+library(pROC)
+AUC$LDA <- roc(as.numeric(validateData$TARGET_heart_disease_present),as.numeric(as.matrix((PredictionProb.lda))))$auc
+Accuracy$LDA <- confusionmat.lda$overall['Accuracy']  
+library(Metrics)
+LogLoss$LDA <- logLoss(as.numeric(validateData$TARGET_heart_disease_present), as.numeric(as.matrix(PredictionProb.lda)))
+# AUC 0.8542, ACC 0.7592593 , LogLoss 1.928269
+
+AUC$LDA
+Accuracy$LDA
+LogLoss$LDA
+
+#========== nodeHarvest ===================================== #
+# estimate skill of nodeHarvest on the validation dataset
+Prediction_NodeHarvest <- predict(fit.nodeHarvest, validateData) # For confusion matrix
+PredictionProb.nodeharvest <- predict(fit.nodeHarvest, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
+confusionmat.nodeharvest <- confusionMatrix(Prediction_NodeHarvest, validateData[,"TARGET_heart_disease_present"])
+
+library(pROC)
+AUC$NodeHarvest <- roc(as.numeric(validateData$TARGET_heart_disease_present),as.numeric(as.matrix((PredictionProb.nodeharvest))))$auc
+Accuracy$NodeHarvest <- confusionmat.nodeharvest$overall['Accuracy']  
+library(Metrics)
+LogLoss$NodeHarvest <- logLoss(as.numeric(validateData$TARGET_heart_disease_present), as.numeric(as.matrix(PredictionProb.nodeharvest)))
+# AUC 0.7896, ACC 0.6666667 , LogLoss 1.313229
+
+AUC$NodeHarvest
+Accuracy$NodeHarves
+LogLoss$NodeHarvest
+
+```
+
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = FALSE}  
+#========== SVM ===================================== #
+# TODO: need SVM to output probabilities correctly [see previous usage in 00_dataload_explore.r]
+# estimate skill of SVM on the validation dataset
+Prediction_SVM <- predict(fit.svm, validateData) # For confusion matrix
+PredictionProb.SVM <- predict(fit.svm, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
+recode_factor(Prediction_SVM, "X0" == "0", "X1" == "1", .default = "D", .missing = "M")
+confusionmat.SVM <- confusionMatrix(Prediction_SVM, validateData[,"TARGET_heart_disease_present"])
+
+library(pROC)
+AUC$SVM <- roc(as.numeric(validateData$TARGET_heart_disease_present),as.numeric(as.matrix((PredictionProb.SVM))))$auc
+Accuracy$SVM <- confusionmat.SVM$overall['Accuracy']  
+library(Metrics)
+LogLoss$SVM <- logLoss(as.numeric(validateData$TARGET_heart_disease_present), as.numeric(as.matrix(PredictionProb.SVM)))
+# AUC 0.91, ACC 0.88, LogLoss 0.67
+
+
+AUC$SVM
+Accuracy$SVM
+LogLoss$SVM
+
+```
+
 8. 	Comparing experiment results for first iteration
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
+
+row.names <- names(Accuracy)
+col.names <- c("AUC", "Accuracy","LogLoss")
+ExperimentResults <- cbind(as.data.frame(matrix(c(AUC,Accuracy,LogLoss),nrow = 4, ncol = 3, 
+                           dimnames = list(row.names, col.names)))) ## make nrows and ncols bigger when more models created
+
+ExperimentResults
+```
+
 9.	Thoughts and conclusion
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
+
+```
 
 
 # Part 3: Refined iteration of modelling using XGBoost
@@ -218,6 +1200,11 @@ Data Science problem translation: Supervised machine learning, binary classifica
 ## Lessons from first iteration of modelling and including hyper parameter tuning for xgboost model
 	
 1. Setup data for xgboost
+
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
+
+```
+
 2. Refined iteration: Feature selection
 3. Training data
 4. Validation data

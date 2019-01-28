@@ -26,6 +26,7 @@ library(gridExtra) #viewing multiple plots together
 library(lattice)
 library(knitr) # for dynamic reporting
 library(DataExplorer)
+library(lime)
 #TODO: Add all the other libraries here.
 
 

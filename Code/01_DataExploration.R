@@ -58,10 +58,6 @@ config <- list(
 )
 
 
-# The 'xgboost' library must be installed - doesn't need to be loaded
-#train_orig <- read_csv("xgboost_train.csv")
-#test_orig <- read_csv("xgboost_test.csv")
-
 # Read in CSV
 # TRAINING SETS #
 raw.train_labels <- read.csv(F("/Data/train_labels.csv"), stringsAsFactors = FALSE)
@@ -111,30 +107,41 @@ mlr::summarizeColumns(wrk.combined) %>%
 # thal, chest_pain_type asymptomatic, ST depression significant
 
 wrk.combined_datatypecleaned <- wrk.combined %>%
+  # The original source of the dataset defined the thal variable as a numeric variable with 3 discrete values, 3,6 and 7.
+  # Lets experiment with this original data variable definition
   mutate(NUMthal = case_when(thal == "normal" ~ 3,
                              thal == "reversible_defect" ~ 6,
                              thal == "fixed_defect" ~ 7 )) %>%
   mutate(CATsex = case_when(sex == 0 ~ "female",
-                            sex == 1 ~ "male")) %>%    
+                            sex == 1 ~ "male")) %>%   
+  # chest pain type character categorty values derived from original source dataset
   mutate(CATchest_pain_type = case_when(chest_pain_type == 1 ~ "typical_angina",
                                         chest_pain_type == 2 ~ "atypical_angina",
                                         chest_pain_type == 3 ~ "non-anginal_pain",
                                         chest_pain_type == 4 ~ "asymptomatic")) %>%
+  # slope of peak exercise st segment character categorty values derived from original source dataset
   mutate(CATslope_of_peak_exercise_st_segment = case_when(slope_of_peak_exercise_st_segment == 1 ~ "upsloping",
                                                           slope_of_peak_exercise_st_segment == 2 ~ "flat",
                                                           slope_of_peak_exercise_st_segment == 3 ~ "downsloping")) %>%
   mutate(CATfasting_blood_sugar_gt_120_mg_per_dl = case_when(fasting_blood_sugar_gt_120_mg_per_dl == 0 ~ "no",
                                                              fasting_blood_sugar_gt_120_mg_per_dl == 1 ~ "yes")) %>% 
   ## IMPORTANT NOTE ON EKG - VALUE 1 LINKED WITH ST elevation or depression greater than 0.05 mV. Value 2 uses Estes' criteria measurement.
+  # resting ekg results character categorty values derived from original source dataset
   mutate(CATresting_ekg_results = case_when(resting_ekg_results == 0 ~ "normal",
                                             resting_ekg_results == 1 ~ "ST-T_wave_abnormality",
                                             resting_ekg_results == 2 ~ "likely_left_ventricular_hypertrophy" )) %>%
   mutate(CATexercise_induced_angina = case_when(exercise_induced_angina == 0 ~ "no",
                                                 exercise_induced_angina == 1 ~ "yes")) %>%
-  mutate(CATMaxHeartRateAchieved = ifelse(max_heart_rate_achieved < (206.9-(0.67 * age)),"Below_MHR_ForAge",
+  # ENGINEERED FEATURES FOR EXPERIMENTATION:
+  # 1. Numeric - Max Heart Rate for Age group. The theoretical maximum heart rate the patient ought to be able to achieve for their age
+  mutate(NUMMaxHeartRateForAge = round(206.9 - (0.67 * age)),digits = 0) %>%
+  # 2. Factor - CATMaxHeartRateAchieved - the theoretical maximum heart rate for the patient relative to their max hr test score
+  mutate(CATMaxHeartRateAchieved = ifelse(max_heart_rate_achieved < (206.9 - (0.67 * age)),"Below_MHR_ForAge",
                                           "AtorAbove_MHR_ForAge" )) %>%
+  # 3. Factor - CATOldpeakSTDepression - group the test results into minor or significant deviations
   mutate(CATOldpeakSTDepression = ifelse(oldpeak_eq_st_depression <= 2.0, "minor_ST_depression",
                                          "significant_ST_depression" )) %>%
+  # FINAL SELECTION - what features will we remove, with respect to model output features of importance?
   select(-NUMthal,
          -sex,
          -chest_pain_type,
@@ -143,6 +150,7 @@ wrk.combined_datatypecleaned <- wrk.combined %>%
          -resting_ekg_results,
          -exercise_induced_angina) %>%
   
+  # Apply some more meaninful names to the variables. Prefix data types.
   dplyr::rename(TARGET_heart_disease_present   = heart_disease_present,
                 CATthal                        = thal, 
                 NUMresting_blood_pressure      = resting_blood_pressure,
@@ -159,10 +167,11 @@ wrk.combined_datatypecleaned <- wrk.combined %>%
 #### FEATURE SELECTION ##########
 glimpse(wrk.combined_datatypecleaned)
 wrk.combined_datatypecleaned <- select(wrk.combined_datatypecleaned, patient_id, TARGET_heart_disease_present, CATDataSetOrigin,
-                                       CATthal,CATchest_pain_type,  NUMoldpeak_eq_st_depression, NUMnum_major_vessels, NUMmax_heart_rate_achieved,
+                                       CATthal,CATchest_pain_type,  NUMoldpeak_eq_st_depression, NUMnum_major_vessels, 
+                                       NUMMaxHeartRateForAge, NUMmax_heart_rate_achieved,
                                        CATsex, CATexercise_induced_angina, CATslope_of_peak_exercise_st_segment,
                                        NUMage)
-features_selected = c("CATthal","CATchest_pain_type",  "NUMoldpeak_eq_st_depression", "NUMnum_major_vessels", "NUMmax_heart_rate_achieved",
+features_selected = c("CATthal","CATchest_pain_type",  "NUMoldpeak_eq_st_depression", "NUMnum_major_vessels","NUMMaxHeartRateForAge", "NUMmax_heart_rate_achieved",
                       "CATsex", "CATexercise_induced_angina", "CATslope_of_peak_exercise_st_segment",
                       "NUMage")
 #################################
@@ -174,8 +183,8 @@ skim(wrk.combined_datatypecleaned)
 
 # DataExplorer
 create_report(wrk.combined_datatypecleaned, output_file = "DataExplorer_Report_FullDset.html", output_dir = F("/Docs"),
-              y = "TARGET_heart_disease_present", config = config,
-              html_document(toc = TRUE, toc_depth = 6, theme = "flatly"))
+              y = "TARGET_heart_disease_present", config = config)
+             # ,html_document(toc = TRUE, toc_depth = 6, theme = "flatly"))
 
 
 # 1. Target class distribution
@@ -327,6 +336,7 @@ names(colors) = unique(y$TARGET_heart_disease_present)
 ## Executing the algorithm on curated data
 tsne <- Rtsne(x, dims = 2, perplexity=9, verbose=TRUE, max_iter = 500)
 exeTimeTsne <- system.time(Rtsne(x, dims = 2, perplexity=9, verbose=TRUE, max_iter = 500))
+# TODO: We can step through running TSNE adding one variable at a time to check seperability
 
 ## Plotting
 plot(tsne$Y, t='n', main="tsne")

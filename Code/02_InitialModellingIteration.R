@@ -236,7 +236,7 @@ LogLoss$NodeHarvest <- logLoss(as.numeric(testData$heart_disease_present), as.nu
 # estimate skill of SVM on the validation dataset
 Prediction_SVM <- predict(fit.svm, testData) # For confusion matrix
 PredictionProb.SVM <- predict(fit.svm, testData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
-confusionmat.SVM<- confusionMatrix(Prediction_SVM, testData[,"heart_disease_present"])
+confusionmat.SVM <- confusionMatrix(Prediction_SVM, testData[,"heart_disease_present"])
 
 library(pROC)
 AUC$SVM <- roc(as.numeric(testData$heart_disease_present),as.numeric(as.matrix((PredictionProb.SVM))))$auc
@@ -250,5 +250,5 @@ LogLoss$SVM <- logLoss(as.numeric(testData$heart_disease_present), as.numeric(as
 # ===============================================================================================================#
 row.names <- names(Accuracy)
 col.names <- c("AUC", "Accuracy","LogLoss")
-cbind(as.data.frame(matrix(c(AUC,Accuracy,LogLoss),nrow = 3, ncol = 3, 
+cbind(as.data.frame(matrix(c(AUC,Accuracy,LogLoss),nrow = 4, ncol = 3, 
                            dimnames = list(row.names, col.names)))) ## make nrows and ncols bigger when more models created
