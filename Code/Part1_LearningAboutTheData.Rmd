@@ -38,6 +38,7 @@ output:
 #devtools::install_github("rstudio/rsconnect")
 library(rsconnect)
 library(purrr) #reduce and map functions
+library(reshape2)
 library(rprojroot)
 library(dplyr)
 library(tibble)
@@ -625,7 +626,7 @@ Ergebnis
 
 1. One-hot encoding
 
-```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+```{r echo=TRUE, message=FALSE, warning=FALSE}
 # One-hot enccode (create dummy) variables - all except the target class and dataset origin flag.
 wrk.combined_datatypecleaned <- mlr::createDummyFeatures(
   wrk.combined_datatypecleaned, target = "TARGET_heart_disease_present",
@@ -883,7 +884,12 @@ It ensures the results are directly comparable.
 
 Caret does support the configuration and tuning of the configuration of each model, we will explore this later.
 
-```{r eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+```{r eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+# RUN THIS CODE BUT DONT SHOW OUTPUT. Model spam.
+
+#using capture.output() wrapped around caret's train function to suppress model execution print messages, as default caret will write model output via stdout.
+# REF:https://stackoverflow.com/questions/35446743/remove-iterations-of-caretttrain-on-knit-html-output
+
 #set.seed(1111)
 # Let’s build our five basic models:
 # 1) linear algorithms
@@ -956,6 +962,84 @@ fit.glmnet   <- caret::train(TARGET_heart_disease_present~., data=trainData, met
 
 ```
 
+
+```{r eval=FALSE, echo=TRUE, message=FALSE, warning=FALSE}
+#using capture.output() wrapped around caret's train function to suppress model execution print messages, as default caret will write model output via stdout.
+# REF:https://stackoverflow.com/questions/35446743/remove-iterations-of-caretttrain-on-knit-html-output
+
+#set.seed(1111)
+# Let’s build our five basic models:
+# 1) linear algorithms
+# LDA
+#set.seed(7)
+fit.lda <- caret::train(TARGET_heart_disease_present~., data=trainData, method="lda", metric=metric, trControl=control)
+
+# 2) nonlinear algorithms
+# CART
+#set.seed(7)
+fit.cart <- caret::train(TARGET_heart_disease_present~., data=trainData, method="rpart", metric=metric, trControl=control)
+
+# 3) kNN
+#set.seed(7)
+fit.knn <- caret::train(TARGET_heart_disease_present~., data=trainData, method="knn", metric=metric, trControl=control)
+
+# 4) advanced algorithms
+# SVM 
+#set.seed(7)
+# NOTE: Using "trainData2" with factors configured with names, and train control is using SpecialControl object
+fit.svm <- caret::train(TARGET_heart_disease_present~., data=trainData2, method="svmRadial", metric=metric, trControl = SpecialControl)
+#SVM requires that the target class variable use character names when training the model. i.e, 1= "YES", 0="No". We can use make.names() to fix this.
+
+# 5) advanced algorithms
+#Random Forest
+#set.seed(7)
+fit.rf <- caret::train(TARGET_heart_disease_present~., data=trainData, method="rf",preProcess = c("scale", "center"), metric=metric, trControl=control)
+
+#==================================== General Performing Algorithms =================================================
+#GLM
+fit.glm <- caret::train(TARGET_heart_disease_present~., data=trainData, method = "glm", metric=metric, trControl=control)
+
+# Random forest with default tuning
+#fit.rf_default <- randomForest(TARGET_heart_disease_present ~ ., data = trainData, importance = TRUE, ntree = 2000)
+
+# Boosted tree with tuning
+objControl <- trainControl(method = 'cv', number = 10)
+fit.boostedtree <- caret::train(TARGET_heart_disease_present ~ .,data=trainData, method = 'gbm',
+                    trControl=objControl, tuneGrid = gbmGrid, verbose=FALSE)
+
+# Stochastic gradient boosting machine
+fit.gbm <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "gbm", verbose = FALSE,
+                  tuneGrid = gbmGrid, metric=metric, trControl=SpecialControl)
+
+
+#===================================================================================================================
+
+# Advanced ML Algorithms (deep learning) ============================================================================
+
+# Neural network
+fit.nnet <- caret::train(TARGET_heart_disease_present~., data=trainData, method = "nnet", metric=metric, trControl=control)
+
+# Best general performing algorithms: 
+# https://datascience.stackexchange.com/questions/10745/which-of-the-180-algorithms-in-rs-caret-package-are-feasible
+# more detail on xgboost: http://mlr-org.github.io/How-to-win-a-drone-in-20-lines-of-R-code/
+
+# Model Averaged Neural Network
+fit.avnnet <- caret::train(TARGET_heart_disease_present~., data=trainData, method = "avNNet", metric=metric, trControl=control)
+
+#Tree-Based ensembles
+fit.nodeHarvest <- caret::train(TARGET_heart_disease_present~., data=trainData, method = "nodeHarvest", metric=metric, trControl=control)
+
+# Parallel random forest
+fit.parRF <- caret::train(TARGET_heart_disease_present~., data=trainData, method = "parRF", metric=metric, trControl=control)
+
+# mboost
+fit.glmboost <- caret::train(TARGET_heart_disease_present~., data=trainData, method = "glmboost", metric=metric, trControl=control)
+fit.glmnet   <- caret::train(TARGET_heart_disease_present~., data=trainData, method = "glmnet", metric=metric, trControl=control)
+
+
+```
+
+
 6. 	Cross Validation and Evaluating the best model
 
 We now have 5 models and accuracy estimations for each. 
@@ -963,8 +1047,6 @@ We need to compare the models to each other and select the most accurate.
 We can report on the accuracy of each model by first creating a list of the created models and using the summary function.
 
 ```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
-
-# svm=fit.svm not included here, "there are different numbers of resamples" in this model versus the rest
 
 results <- caret::resamples(list(lda=fit.lda, cart=fit.cart, knn=fit.knn, fit.svm, rf=fit.rf, 
                                  glm=fit.glm, boostedtree=fit.boostedtree, gbm=fit.gbm,
@@ -996,42 +1078,6 @@ print(fit.gbm)
    importance <- caret::varImp(fit.rf, scale = TRUE)
    plot(importance)
 
-# LOGLOSS:
-#$`logReg`
-#[1] 0.4693868  // 0.36453 comp result
-#$RF
-#[1] 0.7053043  // 0.4028 comp result
-#$CaretRF
-#[1] 0.7366456  // 0.40 comp result
-#$boost
-#[1] 1.156777
-#$gbm
-#[1] 0.6511815
-#$svm
-#[1] 0.4587091 << best model! // 0.39 comp result
-
-
-# ===============================================================================================================#
-# SELECTED BEST PERFORMING MODEL: VARIABLES OF IMPORTANCE =======================================================#
-# ===============================================================================================================#
-  # summary(logRegModel)$coeff # Second best performing mode, GLM, variables of importance. TODO: recode sex as factor.
-  # 
-
-# ===============================================================================================================#
-# Confusion Matrix Output                                 =======================================================#
-# ===============================================================================================================#
-
-#logRegConfMat
-#RFConfMat
-#boostConfMat
-#gbmConfMat
-#svmConfMat
-
-# ===============================================================================================================#
-# Example of Model output for selection of tuning parameters ====================================================#
-# ===============================================================================================================#
-
-#boostModel
 
 
 ```
@@ -1130,7 +1176,7 @@ LogLoss$NodeHarvest
 
 
 #========== Classification and Regression Trees (CART) ===================================== #
-# estimate skill of nodeHarvest on the validation dataset
+# estimate skill of CART on the validation dataset
 Prediction_CART <- predict(fit.cart, validateData) # For confusion matrix
 PredictionProb.CART <- predict(fit.cart, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
 confusionmat.CART <- confusionMatrix(Prediction_CART, validateData[,"TARGET_heart_disease_present"])
@@ -1148,7 +1194,7 @@ LogLoss$CART
 
 
 #========== k-Nearest Neighbors (KNN) ===================================== #
-# estimate skill of nodeHarvest on the validation dataset
+# estimate skill of KNN on the validation dataset
 Prediction_KNN <- predict(fit.knn, validateData) # For confusion matrix
 PredictionProb.KNN <- predict(fit.knn, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
 confusionmat.KNN <- confusionMatrix(Prediction_KNN, validateData[,"TARGET_heart_disease_present"])
@@ -1165,7 +1211,7 @@ Accuracy$KNN
 LogLoss$KNN
 
 #========== Random Forest, using default tuning ===================================== #
-# estimate skill of nodeHarvest on the validation dataset
+# estimate skill of RF on the validation dataset
 Prediction_RF <- predict(fit.rf, validateData) # For confusion matrix
 PredictionProb.RF <- predict(fit.rf, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
 confusionmat.RF <- confusionMatrix(Prediction_RF, validateData[,"TARGET_heart_disease_present"])
@@ -1182,7 +1228,7 @@ Accuracy$RF
 LogLoss$RF
 
 #========== GLM generalised linear model  ===================================== #
-# estimate skill of nodeHarvest on the validation dataset
+# estimate skill of GLM on the validation dataset
 Prediction_GLM <- predict(fit.glm, validateData) # For confusion matrix
 PredictionProb.GLM <- predict(fit.glm, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
 confusionmat.GLM <- confusionMatrix(Prediction_GLM, validateData[,"TARGET_heart_disease_present"])
@@ -1200,7 +1246,7 @@ LogLoss$GLM
 
 
 #========== Boosted tree model with tuning (grid search using learning rate and number of trees)  ===================================== #
-# estimate skill of nodeHarvest on the validation dataset
+# estimate skill of Boosted Tree on the validation dataset
 Prediction_BoostedTree <- predict(fit.boostedtree, validateData) # For confusion matrix
 PredictionProb.BoostedTree <- predict(fit.boostedtree, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
 confusionmat.BoostedTree <- confusionMatrix(Prediction_BoostedTree, validateData[,"TARGET_heart_disease_present"])
@@ -1218,7 +1264,7 @@ LogLoss$BoostedTree
 
 
 #========== Averaged Neural Network ===================================== #
-# estimate skill of nodeHarvest on the validation dataset
+# estimate skill of AVNET on the validation dataset
 Prediction_AVNet <- predict(fit.avnnet, validateData) # For confusion matrix
 PredictionProb.AVNet <- predict(fit.avnnet, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
 confusionmat.AVNet <- confusionMatrix(Prediction_AVNet, validateData[,"TARGET_heart_disease_present"])
@@ -1235,14 +1281,14 @@ Accuracy$AVNet
 LogLoss$AVNet
 
 #========== Parallel Random Forest  ===================================== #
-# estimate skill of nodeHarvest on the validation dataset
+# estimate skill of Par RF on the validation dataset
 Prediction_PARRF <- predict(fit.parRF, validateData) # For confusion matrix
 PredictionProb.PARRF <- predict(fit.parRF, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
 confusionmat.PARRF <- confusionMatrix(Prediction_PARRF, validateData[,"TARGET_heart_disease_present"])
 
 #Using pROC and Metrics libraries
 AUC$PARRF <- pROC::roc(as.numeric(validateData$TARGET_heart_disease_present),as.numeric(as.matrix((PredictionProb.PARRF))))$auc
-Accuracy$PARRF <- confusionmat.PARRF['Accuracy']  
+Accuracy$PARRF <- confusionmat.PARRF$overall[1] # accuracy
 LogLoss$PARRF <- Metrics::logLoss(as.numeric(validateData$TARGET_heart_disease_present), as.numeric(as.matrix(PredictionProb.PARRF)))
 # Parallel RF AUC 0.7896, ACC 0.6666667 , LogLoss 1.313229
 
@@ -1253,14 +1299,14 @@ LogLoss$PARRF
 
 
 #========== GLM Boost ===================================== #
-# estimate skill of nodeHarvest on the validation dataset
+# estimate skill of GLM Boosted on the validation dataset
 Prediction_glmboost <- predict(fit.glmboost, validateData) # For confusion matrix
 PredictionProb.glmboost <- predict(fit.glmboost, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
 confusionmat.glmboost <- confusionMatrix(Prediction_glmboost, validateData[,"TARGET_heart_disease_present"])
 
 #Using pROC and Metrics libraries
 AUC$glmboost <- pROC::roc(as.numeric(validateData$TARGET_heart_disease_present),as.numeric(as.matrix((PredictionProb.glmboost))))$auc
-Accuracy$glmboost <- confusionmat.glmboost['Accuracy']  
+Accuracy$glmboost <- confusionmat.glmboost$overall[1] # accuracy
 LogLoss$glmboost <- Metrics::logLoss(as.numeric(validateData$TARGET_heart_disease_present), as.numeric(as.matrix(PredictionProb.glmboost)))
 # Parallel RF AUC 0.7896, ACC 0.6666667 , LogLoss 1.313229
 
@@ -1272,14 +1318,14 @@ LogLoss$glmboost
 
 
 #========== GLM Net ===================================== #
-# estimate skill of nodeHarvest on the validation dataset
+# estimate skill of GLM NET on the validation dataset
 Prediction_glmnet <- predict(fit.glmnet, validateData) # For confusion matrix
 PredictionProb.glmnet <- predict(fit.glmnet, validateData, type = "prob")[,2] # FOR probability outputs, [] for binary predcition, we will have 2 pred columns
 confusionmat.glmnet <- confusionMatrix(Prediction_glmnet, validateData[,"TARGET_heart_disease_present"])
 
 #Using pROC and Metrics libraries
 AUC$glmnet <- pROC::roc(as.numeric(validateData$TARGET_heart_disease_present),as.numeric(as.matrix((PredictionProb.glmnet))))$auc
-Accuracy$glmnet <- confusionmat.glmnet['Accuracy']  
+Accuracy$glmnet <- confusionmat.glmnet$overall[1] #accuracy
 LogLoss$glmnet <- Metrics::logLoss(as.numeric(validateData$TARGET_heart_disease_present), as.numeric(as.matrix(PredictionProb.glmnet)))
 # Parallel RF AUC 0.7896, ACC 0.6666667 , LogLoss 1.313229
 
@@ -1292,7 +1338,7 @@ LogLoss$glmnet
 ```
 
 
-```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = FALSE}  
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
 #========== SVM ===================================== #
 # estimate skill of SVM on the validation dataset
 Prediction_SVM <- predict(fit.svm, testData2) # For confusion matrix
@@ -1317,14 +1363,83 @@ LogLoss$SVM
 
 ```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
 
-row.names <- names(AUC)
-col.names <- c("AUC", "Accuracy","LogLoss")
-ExperimentResults <- cbind(as.data.frame(matrix(c(AUC,Accuracy,LogLoss),nrow = 14, ncol = 3, 
-                           dimnames = list(row.names, col.names)))) ## make nrows and ncols bigger when more models created
+AUC_DF <- reshape2::melt(as.data.frame(AUC), value.name="AUC")
+ACC_DF <- reshape2::melt(as.data.frame(Accuracy), value.name="Accuracy")
+LogLoss_DF <- reshape2::melt(as.data.frame(LogLoss), value.name="LogLoss")
 
-ExperimentResults
+ModelExperimentResults <- list(AUC_DF, ACC_DF, LogLoss_DF) %>%
+  reduce(left_join, by = c("variable" = "variable"))
 
-# TODO unpacking variables of importance from best performing model - SVM
+ModelExperimentResults # %>% kable()
+
+# Unpacking variables of importance for top performing models - SVM and AVNET
+
+
+#REF:https://shiring.github.io/machine_learning/2017/04/23/lime
+# library(lime)
+# 
+# model_type.SVM <- function(x, ...) {
+#     # Function tells lime() what model type we are dealing with
+#     # 'classification', 'regression', 'survival', 'clustering', 'multilabel', etc
+#     #
+#     # x is our SVM model
+#     return("classification")
+# }
+# predict_model.SVM <- function(x, newdata, type, ...) {
+#     # Function performs prediction and returns dataframe with Response
+#     #
+#     # x is h2o model
+#     # newdata is data frame
+#     # type is only setup for data frame
+# 
+#     pred <- predict(x, newdata)
+# 
+#     # return classification probabilities only
+#     return(as.data.frame(pred[,-1]))
+# }
+# 
+# explain <- lime(trainData[,-1], fit.svm) #, bin_continuous = TRUE, n_bins = 5, n_permutations = 1000)
+
+#Now, let’s look at how the model is explained. Here, I am not going to look at all test cases but I’m randomly choosing three cases with correct predictions and three with wrong predictions.
+# pred <- data.frame(sample_id = 1:nrow(testData2),
+#                    Prediction_SVM,
+#                    actual = testData2$TARGET_heart_disease_present)
+#   pred$prediction <- pred$Prediction_SVM
+#   pred$correct <- ifelse(pred$actual == pred$prediction, "correct", "wrong")
+
+# Beware that we need to give our test-set data table row names with the sample names or IDs to be displayed in the header of our explanatory plots below.
+#   
+# library(tidyverse)
+# pred_cor <- filter(pred, correct == "correct")
+# pred_wrong <- filter(pred, correct == "wrong")
+# 
+# test_data_cor <- testData2 %>%
+#   mutate(sample_id = 1:nrow(testData2)) %>%
+#   filter(sample_id %in% pred_cor$sample_id) %>%
+#   sample_n(size = 3) %>%
+#   remove_rownames() %>%
+#   tibble::column_to_rownames(var = "sample_id") %>%
+#   dplyr::select(-TARGET_heart_disease_present)
+# 
+# test_data_wrong <- testData2 %>%
+#   mutate(sample_id = 1:nrow(testData2)) %>%
+#   filter(sample_id %in% pred_wrong$sample_id) %>%
+#   sample_n(size = 3) %>%
+#   remove_rownames() %>%
+#   tibble::column_to_rownames(var = "sample_id") %>%
+#   dplyr::select(-TARGET_heart_disease_present)
+#   
+# model_type.SVM(fit.svm)
+# predict_model.SVM(fit.svm, testData2)
+# explanation_cor <- lime::explain(test_data_cor, explain, n_labels = 1, n_features = 2)
+# explanation_wrong <- lime::explain(test_data_wrong, explain, n_labels = 1, n_features = 2)
+# 
+# plot_features(explanation_cor, ncol = 3)
+# plot_features(explanation_wrong, ncol = 3)
+# tibble::glimpse(explanation_cor)
+#plot_features(explainer.model.svm, ncol = 2) + ggtitle("auto")
+#plot_explanations(explainer.model.svm)
+
 ```
 
 9.	Thoughts and conclusion
