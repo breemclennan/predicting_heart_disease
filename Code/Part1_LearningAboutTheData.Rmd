@@ -244,11 +244,14 @@ sapply(wrk.combined, class)
   3.3. Summary
 ```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
 # Peek at the data itself
-head(wrk.combined)
+
+datatable(head(wrk.combined), class = "cell-border stripe", filter = 'top', caption = 'Brief view of the data', rowname = FALSE, options = list(autoWidth = TRUE, searching = TRUE, pageLength = 5)) 
 
 mlr::summarizeColumns(wrk.combined) %>%
-  kable(digits = 2)
-  
+  kable("html", escape = FALSE, align = "c", caption = "Summarised Dataset Variables") %>%
+  kable_styling(bootstrap_options = 
+                  c("striped", "condensed", "bordered"), full_width = FALSE)
+
 ```  
 &nbsp;
 
@@ -399,8 +402,13 @@ y <- dplyr::select(wrk.combined_datatypecleaned, TARGET_heart_disease_present)
 1. Summary table with SkimR
 
 ```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+#fix_windows_histograms()
 
-skimr::skim(wrk.combined_datatypecleaned)
+skimr::skim(wrk.combined_datatypecleaned) ##%>% kable()
+
+#%>%
+ # kable("html", escape = FALSE, align = "c", caption = "Summarised Dataset with Cleaned Variables") %>%
+#  kable_styling(bootstrap_options = c("striped", "condensed", "bordered"), full_width = FALSE)
 # sparkline graphs for numerics!
 ```
 
@@ -428,13 +436,17 @@ plot(y, main = "Target class distribution")
 # Now finally, we can take a look at a summary of each attribute in relation to the target variable
 mydata <- dplyr::group_by(wrk.combined_datatypecleaned, TARGET_heart_disease_present) %>%
   skimr::skim()
-mydata
+
+mydata #%>% kable()
+
+#("html", escape = FALSE, align = "c", caption = "Summary of each variable relative to target variable") %>%
+#  kable_styling(bootstrap_options = c("striped", "condensed", "bordered"), full_width = FALSE)
   
 ```
 
 
 4. Scatterplot matrices (numerics), featureplots (factors & categories) and density plots by target class
-```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE, fig.width=5, fig.height=5}  
 # Multivariate plots
 #Now we can look at the interactions between the variables.
 #First let’s look at scatterplots of all pairs of attributes and color the points by class.
@@ -465,7 +477,11 @@ featurePlot(x = x_num,
             auto.key = list(columns = 2))
 
 # Correlation plot (small number of original numeric vars):
-cor(x_num) # print correlation matrix results first, then visually plot.
+cor(x_num) #%>% kable()
+  #kable("html", escape = FALSE, align = "c", caption = "Correlation of Numeric Variables") %>%
+  #kable_styling(bootstrap_options = c("striped", "condensed", "bordered"), full_width = FALSE)
+  # print correlation matrix results first, then visually plot.
+
 corrplot::corrplot.mixed(cor(x_num), lower="circle", upper="color", 
                tl.pos="lt", diag="n", order = "hclust", hclust.method="complete")
 
@@ -474,7 +490,7 @@ corrplot::corrplot.mixed(cor(x_num), lower="circle", upper="color",
 
 
 5. Box and whisker plots (numerics) by target class
-```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE, fig.width=14, fig.height=8}  
 
 
 # box and whisker plots for each attribute (numeric)
@@ -530,7 +546,10 @@ multiplot(x_cat_p4, 'TARGET_heart_disease_present')
 ```{r, message=FALSE, echo=TRUE, warning=FALSE, eval=TRUE}  
 # Try mass Chi Square test (see 99_Functions_MassChi.R)
 funMassChi(x_num)
-Ergebnis
+
+Ergebnis %>%
+  kable("html", escape = FALSE, align = "c", caption = "Chi Square Test for Original Numeric Variables") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed", "bordered"), full_width = FALSE)
 ```
 
 
@@ -551,8 +570,8 @@ colors = rainbow(length(unique(y$TARGET_heart_disease_present)))
 names(colors) = unique(y$TARGET_heart_disease_present)
 
 ## Executing the algorithm on curated data
-tsne <- Rtsne::Rtsne(x, dims = 2, perplexity=9, verbose=TRUE, max_iter = 500)
-exeTimeTsne <- system.time(Rtsne(x, dims = 2, perplexity=9, verbose=TRUE, max_iter = 500))
+tsne <- Rtsne::Rtsne(x, dims = 2, perplexity=9, verbose=FALSE, max_iter = 500)
+exeTimeTsne <- system.time(Rtsne(x, dims = 2, perplexity=9, verbose=FALSE, max_iter = 500))
 # TODO: We can step through running TSNE adding one variable at a time to check seperability
 
 ## Plotting
@@ -612,7 +631,10 @@ chisq.test(wrk.combined_datatypecleaned$NUMage, wrk.combined_datatypecleaned$NUM
 
 # Try mass Chi Square test (see 99_Functions_MassChi.R)
 funMassChi(x_num)
-Ergebnis
+
+Ergebnis %>%
+  kable("html", escape = FALSE, align = "c", caption = "Chi Square Test - New Created Features") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed", "bordered"), full_width = FALSE)
 # delFirst parameter can delete the first n columns. So if you have an count index or something you dont want to test.
 # Can also specify a path for XL output
 # What else is age associated with the age variable??? Check the correlation plot.
@@ -626,7 +648,7 @@ Ergebnis
 
 1. One-hot encoding
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.width=5, fig.height=5}
 # One-hot enccode (create dummy) variables - all except the target class and dataset origin flag.
 wrk.combined_datatypecleaned <- mlr::createDummyFeatures(
   wrk.combined_datatypecleaned, target = "TARGET_heart_disease_present",
@@ -636,7 +658,8 @@ wrk.combined_datatypecleaned <- mlr::createDummyFeatures(
 
 # Checking results
 summarizeColumns(wrk.combined_datatypecleaned) %>%
-  kable(digits = 2)
+  kable("html", escape = FALSE, align = "c", caption = "Instrumental Songs to Exclude from Analysis") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed", "bordered"), full_width = FALSE)
 
 #check correlations post one hot encoding
 corrplot_num <- select_if(wrk.combined_datatypecleaned, is.numeric) #only numerics, target not included.
@@ -644,10 +667,10 @@ corrplot.mixed(cor(corrplot_num), lower="circle", upper="color",
                tl.pos="lt", diag="n", order="hclust", hclust.method="complete")
 
 #Check TSNE again
-tsne <- Rtsne(corrplot_num, dims = 2, perplexity=18, verbose=TRUE, max_iter = 500)
-exeTimeTsne <- system.time(Rtsne(corrplot_num, dims = 2, perplexity=18, verbose=TRUE, max_iter = 500))
+tsne <- Rtsne(corrplot_num, dims = 2, perplexity=18, verbose=FALSE, max_iter = 500)
+exeTimeTsne <- system.time(Rtsne(corrplot_num, dims = 2, perplexity=18, verbose=FALSE, max_iter = 500))
 ## Plotting 
-plot(tsne$Y, t='n', main="tsne")
+plot(tsne$Y, t='n', main="tsne - post data cleanup")
 text(tsne$Y, labels=y$TARGET_heart_disease_present, col=colors[y$TARGET_heart_disease_present])
 
 
@@ -928,10 +951,10 @@ fit.glm <- caret::train(TARGET_heart_disease_present~., data=trainData, method =
 # Boosted tree with tuning
 objControl <- trainControl(method = 'cv', number = 10)
 fit.boostedtree <- caret::train(TARGET_heart_disease_present ~ .,data=trainData, method = 'gbm',
-                    trControl=objControl, tuneGrid = gbmGrid, verbose=FALSE)
+                    trControl=objControl, tuneGrid = gbmGrid)
 
 # Stochastic gradient boosting machine
-fit.gbm <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "gbm", verbose = FALSE,
+fit.gbm <- caret::train(TARGET_heart_disease_present~., data=trainData2, method = "gbm",
                   tuneGrid = gbmGrid, metric=metric, trControl=SpecialControl)
 
 
@@ -1361,7 +1384,7 @@ LogLoss$SVM
 
 8. 	Comparing experiment results for first iteration
 
-```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE}  
+```{r, message=FALSE, echo=TRUE, warning=FALSE, eval = TRUE, fig.width=5, fig.height=5}  
 
 AUC_DF <- reshape2::melt(as.data.frame(AUC), value.name="AUC")
 ACC_DF <- reshape2::melt(as.data.frame(Accuracy), value.name="Accuracy")
@@ -1370,13 +1393,15 @@ LogLoss_DF <- reshape2::melt(as.data.frame(LogLoss), value.name="LogLoss")
 ModelExperimentResults <- list(AUC_DF, ACC_DF, LogLoss_DF) %>%
   reduce(left_join, by = c("variable" = "variable"))
 
-ModelExperimentResults # %>% kable()
+ModelExperimentResults %>%
+  kable("html", escape = FALSE, align = "c", caption = "Instrumental Songs to Exclude from Analysis") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed", "bordered"), full_width = FALSE)
 
 # Unpacking variables of importance for top performing models - SVM and AVNET
 
 
 #REF:https://shiring.github.io/machine_learning/2017/04/23/lime
-# library(lime)
+ library(lime)
 # 
 # model_type.SVM <- function(x, ...) {
 #     # Function tells lime() what model type we are dealing with
@@ -1398,47 +1423,59 @@ ModelExperimentResults # %>% kable()
 #     return(as.data.frame(pred[,-1]))
 # }
 # 
-# explain <- lime(trainData[,-1], fit.svm) #, bin_continuous = TRUE, n_bins = 5, n_permutations = 1000)
+ explain <- lime(trainData[,-1], fit.gbm ) #, bin_continuous = TRUE, n_bins = 5, n_permutations = 1000)
 
-#Now, let’s look at how the model is explained. Here, I am not going to look at all test cases but I’m randomly choosing three cases with correct predictions and three with wrong predictions.
-# pred <- data.frame(sample_id = 1:nrow(testData2),
-#                    Prediction_SVM,
-#                    actual = testData2$TARGET_heart_disease_present)
-#   pred$prediction <- pred$Prediction_SVM
-#   pred$correct <- ifelse(pred$actual == pred$prediction, "correct", "wrong")
+#Now, let’s look at how the model is explained. Here, I am not going to look at all test cases but I’m randomly choosing five cases with correct predictions and three with wrong predictions.
+ 
+ #recode factor labels to binary to include in data frame and compare actual v predicted
+ Prediction_GBM <- dplyr::recode(Prediction_GBM, "X1" = "0", "X2" = "1")
+ 
+ pred <- data.frame(sample_id = 1:nrow(validateData),
+                    Prediction_GBM,
+                    actual = validateData$TARGET_heart_disease_present)
+   pred$prediction <- pred$Prediction_GBM
+   pred$correct <- ifelse(pred$actual == pred$prediction, "correct", "wrong")
 
 # Beware that we need to give our test-set data table row names with the sample names or IDs to be displayed in the header of our explanatory plots below.
-#   
-# library(tidyverse)
-# pred_cor <- filter(pred, correct == "correct")
-# pred_wrong <- filter(pred, correct == "wrong")
-# 
-# test_data_cor <- testData2 %>%
-#   mutate(sample_id = 1:nrow(testData2)) %>%
-#   filter(sample_id %in% pred_cor$sample_id) %>%
-#   sample_n(size = 3) %>%
-#   remove_rownames() %>%
-#   tibble::column_to_rownames(var = "sample_id") %>%
-#   dplyr::select(-TARGET_heart_disease_present)
-# 
-# test_data_wrong <- testData2 %>%
-#   mutate(sample_id = 1:nrow(testData2)) %>%
-#   filter(sample_id %in% pred_wrong$sample_id) %>%
-#   sample_n(size = 3) %>%
-#   remove_rownames() %>%
-#   tibble::column_to_rownames(var = "sample_id") %>%
-#   dplyr::select(-TARGET_heart_disease_present)
-#   
-# model_type.SVM(fit.svm)
-# predict_model.SVM(fit.svm, testData2)
-# explanation_cor <- lime::explain(test_data_cor, explain, n_labels = 1, n_features = 2)
-# explanation_wrong <- lime::explain(test_data_wrong, explain, n_labels = 1, n_features = 2)
-# 
-# plot_features(explanation_cor, ncol = 3)
-# plot_features(explanation_wrong, ncol = 3)
-# tibble::glimpse(explanation_cor)
-#plot_features(explainer.model.svm, ncol = 2) + ggtitle("auto")
-#plot_explanations(explainer.model.svm)
+   
+ library(tidyverse)
+ pred_cor <- filter(pred, correct == "correct")
+ pred_wrong <- filter(pred, correct == "wrong")
+ 
+ test_data_cor <- validateData %>%
+   mutate(sample_id = 1:nrow(validateData)) %>%
+   filter(sample_id %in% pred_cor$sample_id) %>%
+   sample_n(size = 5) %>%
+   remove_rownames() %>%
+   tibble::column_to_rownames(var = "sample_id") %>%
+   dplyr::select(-TARGET_heart_disease_present)
+ 
+ test_data_wrong <- validateData %>%
+   mutate(sample_id = 1:nrow(validateData)) %>%
+   filter(sample_id %in% pred_wrong$sample_id) %>%
+   sample_n(size = 5) %>%
+   remove_rownames() %>%
+   tibble::column_to_rownames(var = "sample_id") %>%
+   dplyr::select(-TARGET_heart_disease_present)
+   
+
+ explanation_cor <- lime::explain(test_data_cor, explain, n_labels = 1, n_features = 5)
+ explanation_wrong <- lime::explain(test_data_wrong, explain, n_labels = 1, n_features = 5)
+ 
+ plot_features(explanation_cor, ncol = 2)
+ plot_features(explanation_wrong, ncol = 2)
+ 
+ tibble::glimpse(explanation_cor) %>%
+   kable("html", escape = FALSE, align = "c", caption = "Instrumental Songs to Exclude from Analysis") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed", "bordered"), full_width = FALSE)
+ 
+ tibble::glimpse(explanation_wrong) %>%
+  kable("html", escape = FALSE, align = "c", caption = "Instrumental Songs to Exclude from Analysis") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed", "bordered"), full_width = FALSE)
+ 
+ #plot_features(explainer.model.svm, ncol = 2) + ggtitle("auto")
+  plot_explanations(explanation_cor)
+  plot_explanations(explanation_wrong)
 
 ```
 
